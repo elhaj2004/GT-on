@@ -1,0 +1,26 @@
+{
+  "name": "Virtual Closet & Try-On",
+  "short_name": "Virtual Closet",
+  "description": "Ta garde-robe virtuelle avec essayage par IA — choisis ta tenue du matin en un clin d'œil.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f0a1e",
+  "theme_color": "#0f0a1e",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
