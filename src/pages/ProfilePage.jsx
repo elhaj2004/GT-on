@@ -6,7 +6,13 @@ import { useRef, useState } from 'react';
 import { Camera, Check, Cloud, HardDrive, KeyRound, Loader2, User } from 'lucide-react';
 import { fileToCompressedDataUrl } from '../lib/utils';
 import { useCloset } from '../context/ClosetContext';
-import { getStoredApiKey, setStoredApiKey } from '../services/geminiService';
+import {
+  FREE_MODELS,
+  getEffectiveModel,
+  getStoredApiKey,
+  setStoredApiKey,
+  setStoredModel,
+} from '../services/geminiService';
 
 function PhotoUploader({ view, label, hint, url, onUpload }) {
   const inputRef = useRef(null);
@@ -67,7 +73,14 @@ export default function ProfilePage() {
   const { profile, updateProfilePhoto, isFirebaseConfigured } = useCloset();
   const [apiKey, setApiKey] = useState(getStoredApiKey());
   const [keySaved, setKeySaved] = useState(false);
+  const [model, setModel] = useState(getEffectiveModel());
   const envKeyPresent = Boolean(import.meta.env.VITE_GEMINI_API_KEY);
+
+  function handleModelChange(event) {
+    const value = event.target.value;
+    setModel(value);
+    setStoredModel(value);
+  }
 
   function handleSaveKey(event) {
     event.preventDefault();
@@ -149,6 +162,32 @@ export default function ProfilePage() {
             </form>
           </>
         )}
+
+        {/* Choix du modèle (gratuit) */}
+        <div className="mt-4 border-t border-white/10 pt-4">
+          <label htmlFor="gemini-model" className="mb-1.5 block text-sm font-medium text-white/70">
+            Modèle d'image
+          </label>
+          <select
+            id="gemini-model"
+            value={model}
+            onChange={handleModelChange}
+            className="w-full rounded-xl border border-white/15 bg-[#171226] px-3 py-2.5 text-sm text-white outline-none focus:border-pink-400/60"
+          >
+            {FREE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+            {!FREE_MODELS.some((m) => m.id === model) && (
+              <option value={model}>{model} (personnalisé)</option>
+            )}
+          </select>
+          <p className="mt-1.5 text-xs text-white/50">
+            Ces modèles sont inclus dans le niveau gratuit de l'API Gemini (limite d'images
+            par jour, sans carte bancaire). Nano Banana est recommandé pour l'essayage.
+          </p>
+        </div>
       </section>
 
       {/* Mode de stockage */}
