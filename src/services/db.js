@@ -6,7 +6,9 @@
  *
  * Modèle de données :
  *   items   : { id, category: 'top'|'bottom'|'shoes', name, color, notes,
- *               imageUrl, owned: boolean, sourceUrl?, createdAt }
+ *               imageUrl, wornImageUrl?, owned: boolean, sourceUrl?, createdAt }
+ *               (wornImageUrl = photo du vêtement porté par la personne,
+ *                utilisée par l'IA comme référence de style)
  *   profile : { frontUrl, backUrl }
  *   outfits : { id, name, top, bottom, shoes, frontImage, backImage, createdAt }
  */
@@ -60,12 +62,16 @@ export async function fetchItems() {
   return (await localStore.getAll('items')) ?? [];
 }
 
-export async function saveItem({ id, imageDataUrl, ...fields }) {
+export async function saveItem({ id, imageDataUrl, wornImageDataUrl, ...fields }) {
   const itemId = id ?? uid();
   let imagePatch = {};
   if (imageDataUrl) {
     const { url, path } = await saveImage(imageDataUrl, 'items');
     imagePatch = { imageUrl: url, imagePath: path };
+  }
+  if (wornImageDataUrl) {
+    const { url, path } = await saveImage(wornImageDataUrl, 'items-worn');
+    imagePatch = { ...imagePatch, wornImageUrl: url, wornImagePath: path };
   }
   const item = { ...fields, ...imagePatch, id: itemId };
   if (isFirebaseConfigured) {
@@ -82,6 +88,7 @@ export async function removeItem(item) {
   if (isFirebaseConfigured) {
     await deleteDoc(doc(firestore, 'items', item.id));
     await deleteImage(item.imagePath);
+    await deleteImage(item.wornImagePath);
   } else {
     await localStore.delete('items', item.id);
   }
