@@ -36,15 +36,22 @@ function LoadingState() {
   );
 }
 
-export default function ResultViewer({ result, loading, onSaveFavorite, onRegenerate, saving, saved }) {
-  const [view, setView] = useState('front');
-
+export default function ResultViewer({
+  result,
+  loading,
+  onSaveFavorite,
+  onRegenerate,
+  saving,
+  saved,
+  view,
+  onViewChange,
+}) {
   // Bascule automatiquement sur une vue disponible.
   useEffect(() => {
     if (!result) return;
-    if (view === 'front' && !result.front && result.back) setView('back');
-    if (view === 'back' && !result.back && result.front) setView('front');
-  }, [result, view]);
+    if (view === 'front' && !result.front && result.back) onViewChange('back');
+    if (view === 'back' && !result.back && result.front) onViewChange('front');
+  }, [result, view, onViewChange]);
 
   if (loading) return <LoadingState />;
 
@@ -85,7 +92,7 @@ export default function ResultViewer({ result, loading, onSaveFavorite, onRegene
             <button
               key={v.id}
               type="button"
-              onClick={() => setView(v.id)}
+              onClick={() => onViewChange(v.id)}
               disabled={!result[v.id]}
               className={cn(
                 'rounded-full px-4 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40',

@@ -131,32 +131,53 @@ function friendlyApiError(e) {
   return `Erreur Gemini : ${message.slice(0, 200)}`;
 }
 
-/**
- * Génère le rendu d'essayage pour une vue donnée.
- *
- * @param {'front'|'back'} view    Vue à générer.
- * @param {string} referenceUrl    Photo de référence (data URL ou https).
- * @param {Array} items            Vêtements sélectionnés [{ name, color, imageUrl, label }].
- * @returns {Promise<string>}      Data URL de l'image générée.
- */
-export async function generateTryOn(view, referenceUrl, items) {
+/** Vérifie la clé API et instancie le client Gemini. */
+function createClient() {
   const apiKey = getEffectiveApiKey();
   if (!apiKey) {
     throw new Error('Aucune clé API Gemini configurée. Ajoute-la depuis la page Profil.');
   }
-  if (!referenceUrl) {
-    throw new Error(`Photo de référence (${view === 'front' ? 'face' : 'dos'}) manquante.`);
-  }
-  if (!items.length) {
-    throw new Error('Sélectionne au moins un vêtement.');
+  return new GoogleGenAI({ apiKey });
+}
+
+/** Envoie une conversation et extrait l'image renvoyée par le modèle. */
+async function requestImage(ai, contents) {
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: getEffectiveModel(),
+      contents,
+      config: { responseModalities: ['IMAGE', 'TEXT'] },
+    });
+  } catch (e) {
+    throw new Error(friendlyApiError(e));
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const parts = response?.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = parts.find((p) => p.inlineData?.data);
+  if (!imagePart) {
+    const text = parts.find((p) => p.text)?.text;
+    throw new Error(
+      text
+        ? `Le modèle n'a pas renvoyé d'image : ${text.slice(0, 200)}`
+        : "Le modèle n'a pas renvoyé d'image. Réessaie."
+    );
+  }
+  const mimeType = imagePart.inlineData.mimeType || 'image/png';
+  return {
+    image: `data:${mimeType};base64,${imagePart.inlineData.data}`,
+    text: parts.find((p) => p.text)?.text?.trim() || '',
+  };
+}
 
+/**
+ * Construit le tour « utilisateur » initial : consigne + photo de référence
+ * + photos des vêtements (seuls et portés). Ce tour est conservé pour les
+ * retouches, afin que le modèle garde tout le contexte d'origine.
+ */
+async function buildBaseParts(view, referenceUrl, items) {
   const referenceData = dataUrlToInlineData(await urlToDataUrl(referenceUrl));
 
-  // Pour chaque vêtement : un libellé texte + la photo du vêtement seul,
-  // puis (si disponible) la photo « portée » comme référence de style.
   const garmentParts = (
     await Promise.all(
       items.map(async (item, index) => {
@@ -180,46 +201,102 @@ export async function generateTryOn(view, referenceUrl, items) {
     )
   ).flat();
 
-  let response;
-  try {
-    response = await ai.models.generateContent({
-      model: getEffectiveModel(),
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: buildPrompt(view, items) },
-            { text: 'Photo de référence de la personne :' },
-            { inlineData: referenceData },
-            ...garmentParts,
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ['IMAGE', 'TEXT'],
-      },
-    });
-  } catch (e) {
-    throw new Error(friendlyApiError(e));
+  return [
+    { text: buildPrompt(view, items) },
+    { text: 'Photo de référence de la personne :' },
+    { inlineData: referenceData },
+    ...garmentParts,
+  ];
+}
+
+/**
+ * Génère le rendu d'essayage pour une vue donnée.
+ *
+ * @param {'front'|'back'} view    Vue à générer.
+ * @param {string} referenceUrl    Photo de référence (data URL ou https).
+ * @param {Array} items            Vêtements sélectionnés [{ name, color, imageUrl, label }].
+ * @returns {Promise<{image: string, baseParts: Array}>}
+ *          L'image générée et le contexte réutilisable pour les retouches.
+ */
+export async function generateTryOn(view, referenceUrl, items) {
+  if (!referenceUrl) {
+    throw new Error(`Photo de référence (${view === 'front' ? 'face' : 'dos'}) manquante.`);
+  }
+  if (!items.length) {
+    throw new Error('Sélectionne au moins un vêtement.');
   }
 
-  const parts = response?.candidates?.[0]?.content?.parts ?? [];
-  const imagePart = parts.find((p) => p.inlineData?.data);
-  if (!imagePart) {
-    const text = parts.find((p) => p.text)?.text;
-    throw new Error(
-      text
-        ? `Le modèle n'a pas renvoyé d'image : ${text.slice(0, 200)}`
-        : "Le modèle n'a pas renvoyé d'image. Réessaie."
-    );
-  }
-  const mimeType = imagePart.inlineData.mimeType || 'image/png';
-  return `data:${mimeType};base64,${imagePart.inlineData.data}`;
+  const ai = createClient();
+  const baseParts = await buildBaseParts(view, referenceUrl, items);
+  const { image } = await requestImage(ai, [{ role: 'user', parts: baseParts }]);
+  return { image, baseParts };
+}
+
+/** Consigne de retouche envoyée après une image déjà générée. */
+function buildRefinePrompt(view, instruction, previousInstructions) {
+  const viewLabel = view === 'front' ? 'de FACE' : 'de DOS';
+  const history = previousInstructions.length
+    ? `\n\nCorrections déjà appliquées, à CONSERVER :\n${previousInstructions
+        .map((t) => `- ${t}`)
+        .join('\n')}`
+    : '';
+
+  return `L'image ci-dessus (vue ${viewLabel}) doit être corrigée.
+
+CORRECTION DEMANDÉE : « ${instruction} »${history}
+
+RÈGLES :
+- Régénère l'image complète en appliquant cette correction.
+- Conserve TOUT le reste à l'identique : la même personne (visage, coiffure, morphologie, teinte de peau), les mêmes vêtements que ceux fournis plus haut, la même vue (${viewLabel}), le même cadrage en pied et le même fond.
+- Reste photoréaliste. Ne renvoie qu'UNE SEULE image, sans texte ni filigrane.`;
+}
+
+/**
+ * Retouche une image déjà générée à partir d'une consigne en langage naturel.
+ *
+ * Le contexte d'origine (photo de référence + vêtements) est renvoyé avec
+ * l'image courante, pour que le modèle corrige sans perdre la tenue.
+ *
+ * @param {object}   params
+ * @param {'front'|'back'} params.view
+ * @param {Array}    params.baseParts             Contexte initial (generateTryOn).
+ * @param {string}   params.currentImage          Image à corriger (data URL).
+ * @param {string}   params.instruction           Consigne de l'utilisatrice.
+ * @param {string[]} [params.previousInstructions] Consignes déjà appliquées.
+ * @returns {Promise<string>} Data URL de l'image corrigée.
+ */
+export async function refineTryOn({
+  view,
+  baseParts,
+  currentImage,
+  instruction,
+  previousInstructions = [],
+}) {
+  if (!currentImage) throw new Error('Aucune image à corriger pour cette vue.');
+  if (!instruction.trim()) throw new Error('Décris la correction souhaitée.');
+
+  const ai = createClient();
+
+  // On ne renvoie que le contexte initial + la dernière image : l'historique
+  // complet ferait grossir le coût sans rien apporter, l'image courante
+  // portant déjà les corrections précédentes.
+  const contents = [
+    ...(baseParts ? [{ role: 'user', parts: baseParts }] : []),
+    { role: 'model', parts: [{ inlineData: dataUrlToInlineData(currentImage) }] },
+    {
+      role: 'user',
+      parts: [{ text: buildRefinePrompt(view, instruction.trim(), previousInstructions) }],
+    },
+  ];
+
+  const { image } = await requestImage(ai, contents);
+  return image;
 }
 
 /**
  * Génère la tenue pour les deux vues (face et dos) en parallèle.
- * Retourne { front, back, errors } — une vue peut échouer indépendamment.
+ * Retourne { front, back, context, errors } — une vue peut échouer
+ * indépendamment ; `context` conserve de quoi retoucher chaque vue.
  */
 export async function generateOutfit(profile, items) {
   const [front, back] = await Promise.allSettled([
@@ -228,8 +305,12 @@ export async function generateOutfit(profile, items) {
   ]);
 
   const result = {
-    front: front.status === 'fulfilled' ? front.value : null,
-    back: back.status === 'fulfilled' ? back.value : null,
+    front: front.status === 'fulfilled' ? (front.value?.image ?? null) : null,
+    back: back.status === 'fulfilled' ? (back.value?.image ?? null) : null,
+    context: {
+      front: front.status === 'fulfilled' ? (front.value?.baseParts ?? null) : null,
+      back: back.status === 'fulfilled' ? (back.value?.baseParts ?? null) : null,
+    },
     errors: [],
   };
   if (front.status === 'rejected') result.errors.push(`Vue de face : ${front.reason.message}`);
