@@ -3,7 +3,7 @@
  * et (pour la wishlist) marquer comme acheté.
  */
 import { useState } from 'react';
-import { Pencil, ShoppingBag, Trash2, WandSparkles } from 'lucide-react';
+import { Pencil, PersonStanding, ShoppingBag, Trash2, WandSparkles } from 'lucide-react';
 import { categoryLabel } from '../../lib/utils';
 import { useCloset } from '../../context/ClosetContext';
 
@@ -45,6 +45,15 @@ function ItemCard({ item, onEdit, onTryOn, showMarkOwned }) {
         <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-0.5 text-[11px] font-medium text-white">
           {categoryLabel(item.category)}
         </span>
+        {item.wornImageUrl && (
+          <span
+            className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-emerald-500/80 px-2 py-0.5 text-[10px] font-semibold text-white"
+            title="Photo « portée » enregistrée : l'IA reproduira ce fit"
+          >
+            <PersonStanding className="h-3 w-3" />
+            fit ✓
+          </span>
+        )}
       </div>
       <div className="p-3">
         <p className="truncate text-sm font-semibold text-white">{item.name}</p>

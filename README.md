@@ -7,8 +7,10 @@ tenue (haut + bas + chaussures) et vois-la **portée sur toi**, de face et de do
 ## ✨ Fonctionnalités
 
 - **Profil** — deux photos de référence (vue de face et vue de dos) utilisées par l'IA.
-- **Garde-robe** — tous tes vêtements par catégories (Hauts, Bas, Chaussures) : ajout par
-  photo, édition, suppression.
+- **Garde-robe** — tous tes vêtements par catégories (Hauts, Bas, Chaussures) : ajout,
+  édition, suppression. Chaque vêtement a **deux photos** : le vêtement seul (à plat /
+  sur cintre) et le vêtement **porté sur soi** — cette seconde photo sert de référence de
+  style à l'IA pour reproduire ton fit réel (oversize, rentré, manches retroussées…).
 - **Studio d'essayage** — 3 carrousels pour composer la tenue, génération IA du rendu
   porté, toggle Face/Dos, enregistrement des tenues en Favoris.
 - **Wishlist** — les vêtements que tu ne possèdes pas encore (captures d'e-commerce…),

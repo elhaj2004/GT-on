@@ -34,21 +34,25 @@ export function hasApiKey() {
 
 function buildPrompt(view, garments) {
   const viewLabel = view === 'front' ? 'de FACE' : 'de DOS';
-  const list = garments
-    .map((g, i) => `${i + 2}. ${g.label} : "${g.name || g.label}"${g.color ? ` (couleur : ${g.color})` : ''}`)
-    .join('\n');
+  const hasWornRefs = garments.some((g) => g.wornImageUrl);
 
   return `Tu es un assistant d'essayage virtuel photoréaliste.
 
-IMAGE 1 : photo de référence d'une personne, vue ${viewLabel}.
-Les images suivantes sont des vêtements :
-${list}
+La PREMIÈRE image est la photo de référence de la personne, vue ${viewLabel}.
+Les images suivantes sont annotées : pour chaque vêtement, une photo du
+vêtement SEUL et, parfois, une photo de RÉFÉRENCE DE STYLE montrant la même
+personne portant ce vêtement.
 
-TÂCHE : génère UNE SEULE image photoréaliste de la personne de l'IMAGE 1, vue ${viewLabel}, portant EXACTEMENT ces vêtements.
+TÂCHE : génère UNE SEULE image photoréaliste de la personne de la première image, vue ${viewLabel}, portant EXACTEMENT ces vêtements.
 
 RÈGLES STRICTES :
-- Conserve fidèlement l'identité de la personne : visage, coiffure, couleur de cheveux, morphologie, teinte de peau et posture de l'IMAGE 1. Ne change JAMAIS la personne.
-- Remplace uniquement ses vêtements par ceux fournis : reproduis fidèlement leurs couleurs, motifs, coupes, textures et logos.
+- Conserve fidèlement l'identité de la personne : visage, coiffure, couleur de cheveux, morphologie, teinte de peau et posture de la première image. Ne change JAMAIS la personne.
+- Remplace uniquement ses vêtements par ceux fournis : reproduis fidèlement leurs couleurs, motifs, coupes, textures et logos.${
+    hasWornRefs
+      ? `
+- Quand une photo de RÉFÉRENCE DE STYLE est fournie pour un vêtement, reproduis EXACTEMENT la façon dont la personne le porte sur cette photo : ampleur/oversize, tombé, longueur, rentré ou non dans le bas, manches retroussées ou non. La référence de style prime sur une interprétation générique du vêtement.`
+      : ''
+  }
 - Ajuste les vêtements de manière réaliste à sa morphologie (plis, tombé du tissu, ombres naturelles).
 - Conserve la même vue (${viewLabel}) et un cadrage en pied montrant les chaussures.
 - Fond neutre et propre, éclairage doux type studio.
@@ -78,11 +82,31 @@ export async function generateTryOn(view, referenceUrl, items) {
   const ai = new GoogleGenAI({ apiKey });
 
   const referenceData = dataUrlToInlineData(await urlToDataUrl(referenceUrl));
-  const garmentParts = await Promise.all(
-    items.map(async (item) => ({
-      inlineData: dataUrlToInlineData(await urlToDataUrl(item.imageUrl)),
-    }))
-  );
+
+  // Pour chaque vêtement : un libellé texte + la photo du vêtement seul,
+  // puis (si disponible) la photo « portée » comme référence de style.
+  const garmentParts = (
+    await Promise.all(
+      items.map(async (item, index) => {
+        const label = `${item.label} n°${index + 1} : "${item.name || item.label}"${
+          item.color ? ` (couleur : ${item.color})` : ''
+        }`;
+        const parts = [
+          { text: `Vêtement — ${label} — photo du vêtement SEUL :` },
+          { inlineData: dataUrlToInlineData(await urlToDataUrl(item.imageUrl)) },
+        ];
+        if (item.wornImageUrl) {
+          parts.push(
+            {
+              text: `RÉFÉRENCE DE STYLE pour ce même vêtement (${label}) : la personne le portant — reproduis ce fit exact :`,
+            },
+            { inlineData: dataUrlToInlineData(await urlToDataUrl(item.wornImageUrl)) }
+          );
+        }
+        return parts;
+      })
+    )
+  ).flat();
 
   const response = await ai.models.generateContent({
     model: MODEL,
@@ -91,6 +115,7 @@ export async function generateTryOn(view, referenceUrl, items) {
         role: 'user',
         parts: [
           { text: buildPrompt(view, items) },
+          { text: 'Photo de référence de la personne :' },
           { inlineData: referenceData },
           ...garmentParts,
         ],

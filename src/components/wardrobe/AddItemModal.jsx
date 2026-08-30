@@ -1,15 +1,67 @@
 /**
  * Modal d'ajout / édition d'un vêtement (garde-robe ou wishlist).
- * Upload photo avec prévisualisation, catégorie, nom, couleur, notes.
+ *
+ * Deux photos par vêtement :
+ *  - le vêtement seul (à plat / sur cintre) — obligatoire ;
+ *  - le vêtement porté sur soi — recommandé : l'IA s'en sert comme
+ *    référence de style pour reproduire le fit réel (oversize, rentré,
+ *    manches retroussées…). Masqué pour la wishlist (article non possédé).
  */
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Loader2, X } from 'lucide-react';
+import { Camera, Loader2, PersonStanding, Shirt, X } from 'lucide-react';
 import { CATEGORIES, cn, fileToCompressedDataUrl } from '../../lib/utils';
 import { useCloset } from '../../context/ClosetContext';
 
+function PhotoSlot({ label, hint, icon: Icon, previewUrl, onPick, aspect = 'aspect-square' }) {
+  const inputRef = useRef(null);
+  const [error, setError] = useState(null);
+
+  async function handleChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    try {
+      onPick(await fileToCompressedDataUrl(file));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  return (
+    <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className={cn(
+          'relative flex w-full items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-white/20 bg-white/5 transition-colors hover:border-pink-400/60',
+          aspect
+        )}
+      >
+        {previewUrl ? (
+          <>
+            <img src={previewUrl} alt={label} className="h-full w-full object-cover" />
+            <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/60 px-2.5 py-0.5 text-[11px] text-white">
+              Changer
+            </span>
+          </>
+        ) : (
+          <span className="flex flex-col items-center gap-1.5 px-3 py-6 text-center text-white/50">
+            {Icon ? <Icon className="h-8 w-8" /> : <Camera className="h-8 w-8" />}
+            <span className="text-xs font-semibold text-white/75">{label}</span>
+            {hint && <span className="text-[11px] leading-tight">{hint}</span>}
+          </span>
+        )}
+      </button>
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleChange} />
+      {error && <p className="mt-1.5 text-xs text-red-300">{error}</p>}
+    </div>
+  );
+}
+
 export default function AddItemModal({ open, onClose, item = null, forWishlist = false }) {
   const { addOrUpdateItem } = useCloset();
-  const fileInputRef = useRef(null);
 
   const [category, setCategory] = useState('top');
   const [name, setName] = useState('');
@@ -17,6 +69,7 @@ export default function AddItemModal({ open, onClose, item = null, forWishlist =
   const [notes, setNotes] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState(null);
+  const [wornImageDataUrl, setWornImageDataUrl] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -31,6 +84,7 @@ export default function AddItemModal({ open, onClose, item = null, forWishlist =
     setNotes(item?.notes ?? '');
     setSourceUrl(item?.sourceUrl ?? '');
     setImageDataUrl(null);
+    setWornImageDataUrl(null);
     setError(null);
     setSaving(false);
   }, [open, item]);
@@ -38,22 +92,12 @@ export default function AddItemModal({ open, onClose, item = null, forWishlist =
   if (!open) return null;
 
   const previewUrl = imageDataUrl ?? item?.imageUrl ?? null;
-
-  async function handleFileChange(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setError(null);
-    try {
-      setImageDataUrl(await fileToCompressedDataUrl(file));
-    } catch (e) {
-      setError(e.message);
-    }
-  }
+  const wornPreviewUrl = wornImageDataUrl ?? item?.wornImageUrl ?? null;
 
   async function handleSubmit(event) {
     event.preventDefault();
     if (!previewUrl) {
-      setError('Ajoute une photo du vêtement.');
+      setError('Ajoute la photo du vêtement seul.');
       return;
     }
     setSaving(true);
@@ -68,6 +112,7 @@ export default function AddItemModal({ open, onClose, item = null, forWishlist =
         sourceUrl: sourceUrl.trim(),
         owned: !isWishlist,
         ...(imageDataUrl ? { imageDataUrl } : {}),
+        ...(wornImageDataUrl ? { wornImageDataUrl } : {}),
       });
       onClose();
     } catch (e) {
@@ -94,33 +139,33 @@ export default function AddItemModal({ open, onClose, item = null, forWishlist =
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Photo */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-white/20 bg-white/5 transition-colors hover:border-pink-400/60"
-          >
-            {previewUrl ? (
-              <>
-                <img src={previewUrl} alt="Aperçu du vêtement" className="h-full w-full object-cover" />
-                <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-3 py-1 text-xs text-white">
-                  Changer la photo
-                </span>
-              </>
-            ) : (
-              <span className="flex flex-col items-center gap-2 text-white/50">
-                <Camera className="h-10 w-10" />
-                <span className="text-sm">Photo du vêtement (galerie ou appareil photo)</span>
-              </span>
+          {/* Photos : vêtement seul + vêtement porté */}
+          <div className="flex gap-3">
+            <PhotoSlot
+              label="Vêtement seul *"
+              hint="À plat ou sur cintre"
+              icon={Shirt}
+              previewUrl={previewUrl}
+              onPick={setImageDataUrl}
+              aspect={isWishlist ? 'aspect-square' : 'aspect-[3/4]'}
+            />
+            {!isWishlist && (
+              <PhotoSlot
+                label="Porté sur toi"
+                hint="Recommandé : montre à l'IA comment tu le portes"
+                icon={PersonStanding}
+                previewUrl={wornPreviewUrl}
+                onPick={setWornImageDataUrl}
+                aspect="aspect-[3/4]"
+              />
             )}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFileChange}
-          />
+          </div>
+          {!isWishlist && (
+            <p className="-mt-2 text-[11px] leading-snug text-white/40">
+              La photo « porté sur toi » aide l'IA à reproduire ton fit réel (oversize, rentré
+              dans le pantalon, manches retroussées…).
+            </p>
+          )}
 
           {/* Catégorie */}
           <div>
