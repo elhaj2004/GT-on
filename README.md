@@ -13,6 +13,10 @@ tenue (haut + bas + chaussures) et vois-la **portée sur toi**, de face et de do
   style à l'IA pour reproduire ton fit réel (oversize, rentré, manches retroussées…).
 - **Studio d'essayage** — 3 carrousels pour composer la tenue, génération IA du rendu
   porté, toggle Face/Dos, enregistrement des tenues en Favoris.
+- **Chat de retouche** — si le rendu n'est pas satisfaisant, décris la correction en
+  langage naturel (« les manches sont trop longues », « rentre le haut dans le
+  pantalon ») : l'agent régénère l'image corrigée en conservant l'identité et la tenue.
+  La correction s'applique à la vue affichée, ou aux deux si tu coches « Les deux vues ».
 - **Wishlist** — les vêtements que tu ne possèdes pas encore (captures d'e-commerce…),
   essayables avant achat, avec bouton « acheté » pour les basculer dans la garde-robe.
 - **PWA** — installable sur l'écran d'accueil d'un smartphone (manifest + service worker).

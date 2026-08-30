@@ -6,7 +6,13 @@ import { useRef, useState } from 'react';
 import { Camera, Check, Cloud, HardDrive, KeyRound, Loader2, User } from 'lucide-react';
 import { fileToCompressedDataUrl } from '../lib/utils';
 import { useCloset } from '../context/ClosetContext';
-import { getStoredApiKey, setStoredApiKey } from '../services/geminiService';
+import {
+  IMAGE_MODELS,
+  getEffectiveModel,
+  getStoredApiKey,
+  setStoredApiKey,
+  setStoredModel,
+} from '../services/geminiService';
 
 function PhotoUploader({ view, label, hint, url, onUpload }) {
   const inputRef = useRef(null);
@@ -67,7 +73,14 @@ export default function ProfilePage() {
   const { profile, updateProfilePhoto, isFirebaseConfigured } = useCloset();
   const [apiKey, setApiKey] = useState(getStoredApiKey());
   const [keySaved, setKeySaved] = useState(false);
+  const [model, setModel] = useState(getEffectiveModel());
   const envKeyPresent = Boolean(import.meta.env.VITE_GEMINI_API_KEY);
+
+  function handleModelChange(event) {
+    const value = event.target.value;
+    setModel(value);
+    setStoredModel(value);
+  }
 
   function handleSaveKey(event) {
     event.preventDefault();
@@ -149,6 +162,34 @@ export default function ProfilePage() {
             </form>
           </>
         )}
+
+        {/* Choix du modèle (gratuit) */}
+        <div className="mt-4 border-t border-white/10 pt-4">
+          <label htmlFor="gemini-model" className="mb-1.5 block text-sm font-medium text-white/70">
+            Modèle d'image
+          </label>
+          <select
+            id="gemini-model"
+            value={model}
+            onChange={handleModelChange}
+            className="w-full rounded-xl border border-white/15 bg-[#171226] px-3 py-2.5 text-sm text-white outline-none focus:border-pink-400/60"
+          >
+            {IMAGE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+            {!IMAGE_MODELS.some((m) => m.id === model) && (
+              <option value={model}>{model} (personnalisé)</option>
+            )}
+          </select>
+          <p className="mt-1.5 text-xs text-white/50">
+            Si la génération échoue avec « limit: 0 », ce n'est pas un quota épuisé : le
+            niveau gratuit de l'API Gemini n'est pas disponible partout (notamment en
+            Europe). Il faut alors activer la facturation sur le projet Google Cloud lié à
+            la clé — la génération coûte environ 4 centimes par image.
+          </p>
+        </div>
       </section>
 
       {/* Mode de stockage */}

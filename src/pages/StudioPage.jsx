@@ -4,11 +4,12 @@
  */
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Trash2, WandSparkles } from 'lucide-react';
-import { CATEGORIES, categoryLabel } from '../lib/utils';
+import { CATEGORIES, categoryLabel, uid } from '../lib/utils';
 import { useCloset } from '../context/ClosetContext';
-import { generateOutfit, hasApiKey } from '../services/geminiService';
+import { generateOutfit, hasApiKey, refineTryOn } from '../services/geminiService';
 import CarouselPicker from '../components/tryon/CarouselPicker';
 import ResultViewer from '../components/tryon/ResultViewer';
+import TryOnChat from '../components/tryon/TryOnChat';
 
 function FavoriteCard({ outfit, onDelete }) {
   const [view, setView] = useState(outfit.frontImage ? 'front' : 'back');
@@ -49,6 +50,12 @@ export default function StudioPage({ onNavigate }) {
   const [savingFavorite, setSavingFavorite] = useState(false);
   const [savedFavorite, setSavedFavorite] = useState(false);
 
+  // Vue affichée (remontée depuis le viewer : le chat corrige cette vue).
+  const [view, setView] = useState('front');
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatBusy, setChatBusy] = useState(false);
+  const [bothViews, setBothViews] = useState(false);
+
   // Chaque carrousel propose garde-robe + wishlist de sa catégorie.
   const byCategory = useMemo(() => {
     const map = { top: [], bottom: [], shoes: [] };
@@ -75,6 +82,7 @@ export default function StudioPage({ onNavigate }) {
     setLoading(true);
     setResult(null);
     setSavedFavorite(false);
+    setChatMessages([]);
     try {
       setResult(await generateOutfit(profile, selectedItems));
     } catch (e) {
@@ -82,6 +90,70 @@ export default function StudioPage({ onNavigate }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  /**
+   * Envoie une consigne de retouche à l'agent pour la ou les vues ciblées,
+   * séquentiellement (le niveau gratuit de l'API limite les requêtes/minute).
+   */
+  async function handleSendCorrection(instruction) {
+    const current = result;
+    const targets = (bothViews ? ['front', 'back'] : [view]).filter((v) => current?.[v]);
+    if (!targets.length) return;
+
+    // Consignes déjà envoyées pour ces vues, à rappeler au modèle.
+    const previousByView = Object.fromEntries(
+      targets.map((v) => [
+        v,
+        chatMessages.filter((m) => m.role === 'user' && m.views?.includes(v)).map((m) => m.text),
+      ])
+    );
+
+    setChatMessages((prev) => [
+      ...prev,
+      { id: uid(), role: 'user', text: instruction, views: targets },
+    ]);
+    setChatBusy(true);
+
+    const done = [];
+    let failure = null;
+    for (const target of targets) {
+      try {
+        const image = await refineTryOn({
+          view: target,
+          baseParts: current.context?.[target],
+          currentImage: current[target],
+          instruction,
+          previousInstructions: previousByView[target],
+        });
+        setResult((prev) => (prev ? { ...prev, [target]: image } : prev));
+        done.push({ view: target, image });
+      } catch (e) {
+        failure = e.message;
+        break;
+      }
+    }
+
+    if (done.length) {
+      const label = done.map((d) => (d.view === 'front' ? 'de face' : 'de dos')).join(' et ');
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          role: 'agent',
+          text: `C'est corrigé sur la vue ${label}. Dis-moi si autre chose ne va pas.`,
+          image: done[done.length - 1].image,
+        },
+      ]);
+      setSavedFavorite(false); // la tenue a changé depuis l'éventuel enregistrement
+    }
+    if (failure) {
+      setChatMessages((prev) => [
+        ...prev,
+        { id: uid(), role: 'agent', text: failure, error: true },
+      ]);
+    }
+    setChatBusy(false);
   }
 
   async function handleSaveFavorite() {
@@ -165,6 +237,18 @@ export default function StudioPage({ onNavigate }) {
         onRegenerate={handleGenerate}
         saving={savingFavorite}
         saved={savedFavorite}
+        view={view}
+        onViewChange={setView}
+      />
+
+      <TryOnChat
+        messages={chatMessages}
+        onSend={handleSendCorrection}
+        busy={chatBusy}
+        disabled={!result || loading}
+        view={view}
+        bothViews={bothViews}
+        onToggleBothViews={setBothViews}
       />
 
       {/* Tenues favorites */}
