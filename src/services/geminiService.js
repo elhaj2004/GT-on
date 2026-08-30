@@ -16,27 +16,35 @@ const API_KEY_STORAGE = 'virtual-closet:gemini-api-key';
 const MODEL_STORAGE = 'virtual-closet:gemini-model';
 
 /**
- * Modèles image proposés dans l'app. Les deux sont accessibles avec une
- * clé API gratuite Google AI Studio (aucune carte bancaire) — le niveau
- * gratuit de l'API inclut gemini-2.5-flash-image (« Nano Banana »), avec
- * une limite d'images par jour. Les modèles image « Pro » plus récents
- * sont payants et ne sont donc pas proposés ici.
+ * Modèles image proposés dans l'app.
+ *
+ * ATTENTION : la disponibilité du niveau GRATUIT ne dépend pas seulement
+ * du modèle, mais aussi du projet Google et du pays. Le niveau gratuit de
+ * l'API Gemini n'est pas proposé dans l'EEE, en Suisse ni au Royaume-Uni,
+ * et l'API renvoie alors une erreur 429 avec « limit: 0 » — ce qui signifie
+ * « aucun quota gratuit », et non « quota du jour épuisé ». Dans ce cas il
+ * faut activer la facturation sur le projet Google Cloud.
  */
-export const FREE_MODELS = [
+export const IMAGE_MODELS = [
   {
     id: 'gemini-2.5-flash-image',
-    label: 'Gemini 2.5 Flash Image — Nano Banana (gratuit, recommandé)',
-  },
-  {
-    id: 'gemini-2.5-flash-image-preview',
-    label: 'Gemini 2.5 Flash Image Preview (gratuit, préversion)',
+    label: 'Gemini 2.5 Flash Image — Nano Banana (recommandé)',
   },
 ];
 
-const DEFAULT_MODEL = FREE_MODELS[0].id;
+const DEFAULT_MODEL = IMAGE_MODELS[0].id;
+
+/** Modèles retirés : préversion dépréciée et sans quota gratuit (limit: 0). */
+const RETIRED_MODELS = ['gemini-2.5-flash-image-preview', 'gemini-2.5-flash-preview-image'];
 
 export function getStoredModel() {
-  return localStorage.getItem(MODEL_STORAGE) || '';
+  const stored = localStorage.getItem(MODEL_STORAGE) || '';
+  // Purge un choix enregistré qui pointe vers un modèle retiré.
+  if (RETIRED_MODELS.includes(stored)) {
+    localStorage.removeItem(MODEL_STORAGE);
+    return '';
+  }
+  return stored;
 }
 
 export function setStoredModel(model) {
@@ -96,8 +104,23 @@ RÈGLES STRICTES :
 /** Traduit les erreurs de l'API Gemini en messages clairs pour l'utilisatrice. */
 function friendlyApiError(e) {
   const message = String(e?.message ?? e);
+
+  // « limit: 0 » = aucun quota gratuit sur ce projet/modèle (typiquement
+  // parce que le niveau gratuit n'existe pas dans l'EEE / Suisse / UK).
+  // Attendre ne sert à rien : il faut activer la facturation.
+  if (/limit:\s*0\b/i.test(message)) {
+    return (
+      "Aucun quota gratuit pour ce modèle sur ta clé (« limit: 0 »). Ce n'est pas un quota " +
+      "épuisé : attendre ne changera rien. Le niveau gratuit de l'API Gemini n'est pas " +
+      'disponible partout (notamment en Europe). Active la facturation sur ton projet ' +
+      'Google Cloud (aistudio.google.com/apikey → Set up billing) pour débloquer la génération.'
+    );
+  }
   if (/RESOURCE_EXHAUSTED|429|quota|rate.?limit/i.test(message)) {
-    return 'Quota gratuit du jour atteint (le niveau gratuit de Gemini limite le nombre d’images par jour). Réessaie dans quelques minutes ou demain.';
+    const retry = /retry in ([\d.]+)s/i.exec(message)?.[1];
+    return retry
+      ? `Trop de requêtes d'un coup. Réessaie dans ${Math.ceil(Number(retry))} secondes.`
+      : 'Quota atteint pour le moment. Réessaie dans quelques minutes.';
   }
   if (/API key|PERMISSION_DENIED|401|403/i.test(message)) {
     return 'Clé API invalide ou sans accès à ce modèle. Vérifie ta clé (page Profil) — une clé gratuite Google AI Studio suffit.';

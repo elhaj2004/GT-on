@@ -7,7 +7,7 @@ import { Camera, Check, Cloud, HardDrive, KeyRound, Loader2, User } from 'lucide
 import { fileToCompressedDataUrl } from '../lib/utils';
 import { useCloset } from '../context/ClosetContext';
 import {
-  FREE_MODELS,
+  IMAGE_MODELS,
   getEffectiveModel,
   getStoredApiKey,
   setStoredApiKey,
@@ -174,18 +174,20 @@ export default function ProfilePage() {
             onChange={handleModelChange}
             className="w-full rounded-xl border border-white/15 bg-[#171226] px-3 py-2.5 text-sm text-white outline-none focus:border-pink-400/60"
           >
-            {FREE_MODELS.map((m) => (
+            {IMAGE_MODELS.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
               </option>
             ))}
-            {!FREE_MODELS.some((m) => m.id === model) && (
+            {!IMAGE_MODELS.some((m) => m.id === model) && (
               <option value={model}>{model} (personnalisé)</option>
             )}
           </select>
           <p className="mt-1.5 text-xs text-white/50">
-            Ces modèles sont inclus dans le niveau gratuit de l'API Gemini (limite d'images
-            par jour, sans carte bancaire). Nano Banana est recommandé pour l'essayage.
+            Si la génération échoue avec « limit: 0 », ce n'est pas un quota épuisé : le
+            niveau gratuit de l'API Gemini n'est pas disponible partout (notamment en
+            Europe). Il faut alors activer la facturation sur le projet Google Cloud lié à
+            la clé — la génération coûte environ 4 centimes par image.
           </p>
         </div>
       </section>
